@@ -66,31 +66,52 @@ def find_vault_path() -> str:
     return str(home / "ai-brain-vault")
 
 
-def find_transcript_dir() -> Path | None:
-    """查找 Claude Code / Codex 的 transcript 目录。"""
+def find_transcript_sources() -> list[Path]:
+    """查找所有对话记录源。"""
     home = Path.home()
-    candidates = [
-        home / ".claude" / "projects",
-        home / ".codex" / "sessions",
-        home / ".openclaw" / "logs",
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
-    return None
+    sources = []
+
+    # Claude Code — projects 目录 + history.jsonl
+    claude_projects = home / ".claude" / "projects"
+    if claude_projects.exists():
+        sources.append(claude_projects)
+    claude_hist = home / ".claude" / "history.jsonl"
+    if claude_hist.exists():
+        sources.append(claude_hist)
+
+    # Codex — history.jsonl + archived_sessions
+    codex_hist = home / ".codex" / "history.jsonl"
+    if codex_hist.exists():
+        sources.append(codex_hist)
+    codex_archived = home / ".codex" / "archived_sessions"
+    if codex_archived.exists():
+        sources.append(codex_archived)
+
+    return sources
 
 
-def harvest_sessions(transcript_dir: Path, lookback_hours: int = 24) -> list[dict]:
-    """收割最近的会话记录。"""
+def harvest_sessions(sources: list[Path], lookback_hours: int = 24) -> list[dict]:
+    """收割所有来源的会话记录。"""
     sessions = []
     cutoff = datetime.now().timestamp() - lookback_hours * 3600
-    for f in transcript_dir.rglob("*.jsonl"):
-        if f.stat().st_mtime > cutoff:
-            sessions.append({
-                "path": str(f),
-                "mtime": f.stat().st_mtime,
-                "size": f.stat().st_size
-            })
+    for src in sources:
+        if src.is_dir():
+            for f in src.rglob("*.jsonl"):
+                if f.stat().st_mtime > cutoff:
+                    sessions.append({
+                        "source": "claude" if ".claude" in str(src) else "codex",
+                        "path": str(f),
+                        "mtime": f.stat().st_mtime,
+                        "size": f.stat().st_size
+                    })
+        elif src.is_file() and src.suffix == ".jsonl":
+            if src.stat().st_mtime > cutoff:
+                sessions.append({
+                    "source": "claude" if ".claude" in str(src) else "codex",
+                    "path": str(src),
+                    "mtime": src.stat().st_mtime,
+                    "size": src.stat().st_size
+                })
     return sorted(sessions, key=lambda s: s["mtime"], reverse=True)
 
 
@@ -157,15 +178,15 @@ def cmd_run(args):
     print()
 
     # 1. 收割
-    transcript_dir = find_transcript_dir()
-    if not transcript_dir:
+    transcript_sources = find_transcript_sources()
+    if not transcript_sources:
         print("[FAIL] 未找到 Claude Code / Codex 会话目录。跳过收割。")
         stats = {"sessions": 0, "tasks": 0, "passed": 0}
         rp = generate_report(vault, stats, [], ["未找到会话目录"])
         print(f"报告已生成：{rp}")
         return
 
-    sessions = harvest_sessions(transcript_dir, config["lookback_hours"])
+    sessions = harvest_sessions(transcript_sources, config["lookback_hours"])
     print(f"[1/5] 收割：发现 {len(sessions)} 个近期会话")
 
     # 2-5 阶段（实际使用需要接入 AI backend，这里是骨架）
