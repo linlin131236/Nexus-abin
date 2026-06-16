@@ -3,7 +3,7 @@
 > Author：阿宾 | GitHub：[linlin131236/Nexus-abin](https://github.com/linlin131236/Nexus-abin)
 > 一份 SKILL.md 当操作系统，装进 Claude Code 或 Codex 直接用。
 > 40+ 功能：记笔记、搜知识库、AI 写作、自媒体工具、电脑控制、生活助手。
-> 含 **Nexus Reflect** —— 每日自我进化引擎，越用越聪明。
+> 含 **Nexus Evolve** —— 自动Skill进化引擎，越用越聪明。
 
 ---
 
