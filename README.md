@@ -167,7 +167,25 @@ python scripts/nexus-evolve.py dry-run            # 仅看报告
 python scripts/nexus-evolve.py status             # 查看最新
 ```
 
-每天生成 `05_Person/Reflect-YYYY-MM-DD.md` 报告。
+每天生成 `05_Person/Evolve-YYYY-MM-DD.md` 报告。
+
+### ⏰ 设为全天候自动运行
+
+**Windows（计划任务）**——每天凌晨 4:53 自动进化：
+
+```powershell
+schtasks /Create /TN "Nexus Evolve" /TR "python D:\Desktop\ai-brain-skill\scripts\nexus-evolve.py run --auto-adopt" /SC DAILY /ST 04:53 /RL HIGHEST
+```
+
+**Mac / Linux（cron）**：
+
+```bash
+crontab -e
+# 添加这行：每天凌晨 4:53 自动进化
+53 4 * * * cd ~/.claude/skills/nexus && python scripts/nexus-evolve.py run --auto-adopt
+```
+
+设好后，Nexus 每天晚上自动扫描你的对话 → 提取模式 → 优化 CLAUDE.md。第二天打开 Claude Code 就已经更懂你了。
 
 ---
 
