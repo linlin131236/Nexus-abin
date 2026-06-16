@@ -1,0 +1,6 @@
+{
+    "api_key": "填入你的API Key",
+    "api_url": "https://api.deepseek.com/v1/chat/completions",
+    "model": "deepseek-chat",
+    "_comment": "也支持 OpenAI / 智谱 / 月之暗面 / 千问 / 豆包，把 api_url 换成对应地址就行。详见 README。"
+}

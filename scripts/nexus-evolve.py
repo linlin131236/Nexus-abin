@@ -14,7 +14,10 @@ Nexus Evolve — 自动Skill进化引擎
 import argparse
 import json
 import os
+import re
 import sys
+import urllib.request
+import urllib.error
 from datetime import datetime
 from pathlib import Path
 
@@ -115,96 +118,322 @@ def harvest_sessions(sources: list[Path], lookback_hours: int = 24) -> list[dict
     return sorted(sessions, key=lambda s: s["mtime"], reverse=True)
 
 
+# ── AI Backend 接入（兼容所有 OpenAI 格式 API）──────────
+
+# 内置主流厂商的 API 地址，用户只需填 KEY
+BUILTIN_PROVIDERS = {
+    "deepseek": {
+        "url": "https://api.deepseek.com/v1/chat/completions",
+        "models": ["deepseek-chat", "deepseek-v4-pro", "deepseek-reasoner"],
+    },
+    "openai": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "models": ["gpt-4o", "gpt-4o-mini"],
+    },
+    "zhipu": {
+        "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        "models": ["glm-4-flash", "glm-4-air"],
+    },
+    "moonshot": {
+        "url": "https://api.moonshot.cn/v1/chat/completions",
+        "models": ["moonshot-v1-8k", "moonshot-v1-32k"],
+    },
+    "qwen": {
+        "url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        "models": ["qwen-plus", "qwen-turbo"],
+    },
+    "doubao": {
+        "url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+        "models": ["doubao-1-5-lite-32k-250115"],
+    },
+    "custom": {
+        "url": "https://你的API地址/v1/chat/completions",
+        "models": ["你的模型名"],
+    },
+}
+
+
+def _load_api_config(vault_path: str) -> dict:
+    """
+    加载 API 配置。查找顺序：
+    1. vault/06_System/nexus-api.json（用户自己建的配置文件）
+    2. 环境变量 NEXUS_API_KEY + NEXUS_API_URL
+    3. 环境变量 DEEPSEEK_API_KEY / OPENAI_API_KEY 等
+    4. OpenClaw 配置文件
+    """
+    # 1. 用户配置文件
+    config_path = Path(vault_path) / "06_System" / "nexus-api.json"
+    if config_path.exists():
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            if cfg.get("api_key"):
+                return cfg
+        except Exception:
+            pass
+
+    # 2. NEXUS 环境变量
+    env_key = os.environ.get("NEXUS_API_KEY", "").strip()
+    if env_key:
+        return {
+            "api_key": env_key,
+            "api_url": os.environ.get("NEXUS_API_URL", "https://api.deepseek.com/v1/chat/completions"),
+            "model": os.environ.get("NEXUS_MODEL", "deepseek-chat"),
+        }
+
+    # 3. 常见厂商环境变量
+    for var in ["DEEPSEEK_API_KEY", "OPENAI_API_KEY", "GLM_API_KEY", "MOONSHOT_API_KEY", "DASHSCOPE_API_KEY"]:
+        key = os.environ.get(var, "").strip()
+        if key:
+            provider = var.replace("_API_KEY", "").lower()
+            info = BUILTIN_PROVIDERS.get(provider, BUILTIN_PROVIDERS["deepseek"])
+            return {"api_key": key, "api_url": info["url"], "model": info["models"][0]}
+
+    # 4. OpenClaw 配置
+    oc_config = Path.home() / ".openclaw" / "openclaw.json"
+    if oc_config.exists():
+        try:
+            with open(oc_config, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            providers = cfg.get("models", {}).get("providers", {})
+            for p in providers.values():
+                key = p.get("apiKey", "")
+                url = p.get("baseUrl", "")
+                if key and url:
+                    return {"api_key": key, "api_url": url.rstrip("/") + "/chat/completions", "model": "deepseek-chat"}
+        except Exception:
+            pass
+
+    return {}
+
+
+def _call_ai_api(prompt: str, api_config: dict) -> str | None:
+    """调用任意 OpenAI 兼容 API。纯标准库，零依赖。"""
+    api_key = api_config.get("api_key", "")
+    api_url = api_config.get("api_url", "https://api.deepseek.com/v1/chat/completions")
+    model = api_config.get("model", "deepseek-chat")
+
+    payload = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "你是分析助手。只返回 JSON，不要解释、不要 markdown 代码块。"},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.2,
+        "max_tokens": 3000,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(api_url, data=payload, headers={
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    })
+
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            result = json.loads(resp.read())
+            return result["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"   [WARN] API 调用失败：{e}")
+        return None
+
+
+def _try_parse_json(text: str) -> dict | None:
+    """尽力从 AI 返回中提取 JSON。"""
+    if not text:
+        return None
+    text = text.strip()
+    for pattern in [r'\{[\s\S]*\}', r'\[[\s\S]*\]']:
+        m = re.search(pattern, text)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except json.JSONDecodeError:
+                continue
+    return None
+
+
+def analyze_conversations(sessions: list[dict], api_config: dict) -> dict:
+    """主链 3：AI 分析对话，提取模式、偏好、改进建议。"""
+    if not sessions:
+        return {"patterns": [], "preferences": [], "suggestions": []}
+
+    # 采样：选最大的 5 个文件，每文件取前 2000 字符
+    samples = []
+    sorted_sessions = sorted(sessions, key=lambda s: s["size"], reverse=True)
+    for s in sorted_sessions[:5]:
+        try:
+            with open(s["path"], "r", encoding="utf-8") as f:
+                content = f.read(3000)
+                samples.append({"source": s["source"], "name": Path(s["path"]).name, "content": content})
+        except Exception:
+            continue
+
+    if not samples:
+        return {"patterns": [], "preferences": [], "suggestions": []}
+
+    prompt = f"""分析以下用户与 AI 的对话片段。提取三类信息，返回严格 JSON：
+
+1. patterns: 反复出现的工作模式（如"每次写代码前先要整体方案"）。含 frequency（出现次数）和 evidence（简短证据）。
+2. preferences: 用户偏好（如"喜欢直接简洁的风格"）。含 confidence（高/中/低）。
+3. suggestions: 可写入 CLAUDE.md 的具体改进规则。含 rule（一条可执行的规则）、reason（依据）、priority（高/中/低）。
+
+只返回 JSON，格式：{{"patterns": [...], "preferences": [...], "suggestions": [...]}}
+
+对话片段：
+{json.dumps([{"source": s["source"], "content": s["content"][:1500]} for s in samples], ensure_ascii=False)}
+"""
+
+    print("   ⏳ 正在调用 AI 分析对话模式...")
+    result = _call_ai_api(prompt, api_config)
+    if not result:
+        return {"patterns": [], "preferences": [], "suggestions": []}
+
+    parsed = _try_parse_json(result)
+    if not parsed:
+        print("   [WARN] AI 返回不是有效 JSON，跳过分析")
+        return {"patterns": [], "preferences": [], "suggestions": []}
+
+    return {
+        "patterns": parsed.get("patterns", []),
+        "preferences": parsed.get("preferences", []),
+        "suggestions": parsed.get("suggestions", []),
+    }
+
+
+# ── 门控验证 ──────────────────────────────
+
+IRON_RULES = [
+    "破折号",
+    "不是X而是X",
+    "竟然",
+    "仿佛",
+    "宛如",
+    "双向链接",
+    "文艺腔",
+]
+
+
+def _conflicts_with_iron_rules(suggestion: str) -> bool:
+    """检查建议是否与写作铁律冲突。"""
+    return any(rule in suggestion for rule in IRON_RULES)
+
+
+def _is_already_present(suggestion: str, claude_md_content: str) -> bool:
+    """检查规则是否已存在于 CLAUDE.md。"""
+    key_phrase = suggestion[:40]
+    return key_phrase in claude_md_content
+
+
+def gate_improvements(analysis: dict, vault_path: str) -> tuple[list[dict], list[dict]]:
+    """主链 4-5：门控验证候选改进。返回 (通过的, 拒绝的)。"""
+    passed = []
+    rejected = []
+
+    claude_md = Path.home() / ".claude" / "CLAUDE.md"
+    existing = ""
+    if claude_md.exists():
+        try:
+            with open(claude_md, "r", encoding="utf-8") as f:
+                existing = f.read()
+        except Exception:
+            pass
+
+    for s in analysis.get("suggestions", []):
+        rule = s.get("rule", "")
+        reason = s.get("reason", "")
+        priority = s.get("priority", "中")
+
+        # 门控条件
+        failures = []
+        if not rule or len(rule) < 10:
+            failures.append("规则过短<10字")
+        if _conflicts_with_iron_rules(rule):
+            failures.append("与写作铁律冲突")
+        if _is_already_present(rule, existing):
+            failures.append("已存在于CLAUDE.md")
+
+        if failures:
+            rejected.append({"rule": rule, "reason": reason, "failures": failures})
+        else:
+            passed.append({"rule": rule, "reason": reason, "priority": priority})
+
+    return passed, rejected
+
+
+def apply_improvements(passed: list[dict]) -> str | None:
+    """主链 6：把通过门控的改进写入 CLAUDE.md。"""
+    if not passed:
+        return None
+
+    claude_md = Path.home() / ".claude" / "CLAUDE.md"
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # 备份
+    backup = claude_md.with_suffix(f".md.bak.{today}")
+    original = ""
+    if claude_md.exists():
+        with open(claude_md, "r", encoding="utf-8") as f:
+            original = f.read()
+        with open(backup, "w", encoding="utf-8") as f:
+            f.write(original)
+
+    # 追加 Nexus Evolve 块
+    block = [
+        f"",
+        f"<!-- Nexus Evolve {today} -->",
+        f"## 自动进化 — {today}",
+        f"",
+    ]
+    for i, p in enumerate(passed, 1):
+        block.append(f"{i}. {p['rule']}")
+        block.append(f"   依据：{p['reason']}")
+
+    new_section = "\n".join(block)
+
+    if "<!-- Nexus Evolve" in original:
+        # 替换已有块
+        original = re.sub(
+            r'<!-- Nexus Evolve[\s\S]*?(?=<!--|$)',
+            new_section,
+            original
+        )
+
+    with open(claude_md, "w", encoding="utf-8") as f:
+        f.write(original + ("\n" + new_section if "<!-- Nexus Evolve" not in original else ""))
+
+    return str(claude_md)
+
+
 # ── 从对话中挖掘用户主动标记的对错 ──────────────
 
 # 用户说这些关键词时，Nexus 提取对应内容
 LEARN_TRIGGERS = [
-    # 用户主动标记
+    # 用户主动标记（精确匹配，避免噪音）
+    "记教训:",
+    "记教训：",
+    "存错:",
+    "存错：",
+    "错误记录:",
+    "错误记录：",
     "记住这个教训",
     "存进错误记录",
-    "错误记录",
-    "存进知识库",
-    "存进外脑",
-    "这个是错的",
-    "这个是错的！",
-    "这个是错的。",
-    "记下来",
-    # 用户骂AI / 纠正AI（自动识别为错误）
-    "别这样",
-    "不准",
-    "不许再",
-    "下次不许",
-    "不要再说",
-    "别再说了",
-    "你错",
-    "你说错",
-    "你理解错",
-    "你搞错",
-    "别乱说",
-    "别瞎说",
-    "不对",
-    "不对！",
-    "不对。",
-    "不是这样",
-    "不是这样的",
+    # 强信号纠正（不会在日常对话中误触发）
     "大错特错",
-    "瞎说",
-    "胡说",
-    "难用",
-    "垃圾",
-    "废物",
-    "太差了",
-    "太烂了",
-    "怎么又",
-    "老是",
-    "又是这样",
-    "翻车",
-    "出问题",
-    "不好用",
-    "没法用",
-    "不靠谱",
-    "你在干嘛",
-    "你这什么",
+    "别瞎说",
+    "胡说八道",
 ]
 
 PRAISE_TRIGGERS = [
-    # 用户夸奖AI——记录下什么是对的
-    "说得好",
-    "不错",
-    "不错！",
-    "不错。",
-    "很棒",
-    "很棒！",
-    "厉害",
-    "厉害！",
-    "可以",
-    "可以！",
-    "可以。",
-    "对了",
-    "对了！",
-    "对了。",
-    "好多了",
+    # 用户主动标记
+    "记对:",
+    "记对：",
+    "做得好:",
+    "做得好：",
+    # 强信号夸奖（不会被日常对话误触发）
+    "干得好",
     "这次对了",
     "终于对了",
-    "牛逼",
-    "牛",
-    "稳",
-    "靠谱",
-    "靠谱！",
-    "学到了",
-    "对的",
-    "对的！",
-    "对的。",
-    "没错",
-    "没错！",
-    "干得好",
-    "漂亮",
-    "完美",
-    "完美！",
-    "对对对",
-    "聪明",
-    "好用",
-    "好用！",
+    "好多了",
 ]
 
 PROFILE_TRIGGERS = [
@@ -216,62 +445,93 @@ PROFILE_TRIGGERS = [
 ]
 
 
+def _extract_user_messages(filepath: str) -> list[dict]:
+    """从 Claude Code / Codex JSONL 文件中提取用户消息。只取 role=user 的文本。"""
+    messages = []
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                msg = obj.get("message", obj)
+                role = msg.get("role", "") if isinstance(msg, dict) else ""
+                if role != "user":
+                    continue
+                content = msg.get("content", "")
+                # content 可能是 string 或 list of blocks
+                if isinstance(content, list):
+                    texts = []
+                    for block in content:
+                        if isinstance(block, dict):
+                            texts.append(block.get("text", ""))
+                        elif isinstance(block, str):
+                            texts.append(block)
+                    content = " ".join(texts)
+                if content and isinstance(content, str) and content.strip():
+                    messages.append({
+                        "text": content.strip(),
+                        "raw_line": line,
+                    })
+    except Exception:
+        pass
+    return messages
+
+
 def mine_marked_insights(sessions: list[dict], vault_path: str) -> dict:
     """从对话中提取用户主动标记的内容，分类写入 Obsidian。
 
-    触发条件：用户对话中出现 LEARN_TRIGGERS/PRAISE_TRIGGERS/PROFILE_TRIGGERS 关键词。
-    禁止场景：不扫描 vault 内部文件（避免自己写的东西被当成错误来源）。
-    失败兜底：单文件读取出错 → 跳过该文件继续，不中断全流程。
+    触发条件：用户消息中出现 LEARN_TRIGGERS/PRAISE_TRIGGERS/PROFILE_TRIGGERS 关键词。
+    禁止场景：不扫描 vault 内部文件。只扫描 role=user 的消息，不扫 AI 输出。
+    失败兜底：单文件读取出错/非 JSONL 格式 → 跳过继续。
     """
     insights = {"mistakes": [], "habits": [], "facts": []}
 
     for s in sessions:
-        try:
-            with open(s["path"], "r", encoding="utf-8") as f:
-                lines = f.readlines()
-        except Exception:
-            continue
-
-        for i, line in enumerate(lines):
-            l = line.strip()
-            if not l:
+        user_msgs = _extract_user_messages(s["path"])
+        if not user_msgs:
+            # 回退：按纯文本行扫描（兼容普通 Markdown/文本日志）
+            try:
+                with open(s["path"], "r", encoding="utf-8") as f:
+                    raw = f.read()
+            except Exception:
                 continue
+            user_msgs = [{"text": raw, "raw_line": raw}]
+
+        for msg in user_msgs:
+            text = msg["text"]
 
             for trigger in LEARN_TRIGGERS:
-                if trigger in l:
-                    start = max(0, i - 3)
-                    end = min(len(lines), i + 4)
-                    context = lines[start:end]
-                    cleaned = "".join(context).strip()
+                if trigger in text:
                     insights["mistakes"].append({
                         "trigger": trigger,
-                        "line": l,
-                        "context": cleaned,
+                        "line": text[:500],  # 存清洗后的纯文本
+                        "context": text[:600],
                         "source": s.get("source", "unknown"),
                         "file": s["path"],
                     })
                     break
 
             for trigger in PRAISE_TRIGGERS:
-                if trigger in l:
-                    start = max(0, i - 3)
-                    end = min(len(lines), i + 4)
-                    context = lines[start:end]
-                    cleaned = "".join(context).strip()
+                if trigger in text:
                     insights.setdefault("praises", []).append({
                         "trigger": trigger,
-                        "line": l,
-                        "context": cleaned,
+                        "line": text[:500],
+                        "context": text[:600],
                         "source": s.get("source", "unknown"),
                         "file": s["path"],
                     })
                     break
 
             for trigger in PROFILE_TRIGGERS:
-                if trigger in l:
+                if trigger in text:
                     insights["habits"].append({
                         "trigger": trigger,
-                        "line": l,
+                        "line": text[:500],
                         "source": s.get("source", "unknown"),
                     })
                     break
@@ -475,11 +735,16 @@ def generate_report(vault_path: str, stats: dict, learned: list, rejected: list,
         f"",
         f"## 扫描",
         f"- 会话数：{stats.get('sessions', 0)}",
-        f"- 🚨 用户骂AI/纠正：{len(mined_mistakes)}",
-        f"- 👍 用户夸奖：{len(mined_praises)}",
-        f"- 💡 用户标记习惯：{len(mined_habits)}",
-        f"- 提取任务：{stats.get('tasks', 0)}",
-        f"- 验证通过：{stats.get('passed', 0)}",
+        f"",
+        f"### 关键词挖掘（副链）",
+        f"- 🚨 错误/教训：{stats.get('mined_mistakes', 0)}",
+        f"- 👍 夸奖：{stats.get('mined_praises', 0)}",
+        f"- 💡 习惯：{len(mined_habits)}",
+        f"",
+        f"### AI 分析进化（主链）",
+        f"- 🧠 AI 建议：{stats.get('ai_suggestions', 0)}",
+        f"- ✅ 通过门控：{stats.get('gated_passed', 0)}",
+        f"- ❌ 门控拒绝：{stats.get('gated_rejected', 0)}",
         f"",
     ]
 
@@ -565,20 +830,64 @@ def cmd_run(args):
     if saved:
         print(f"   📝 已写入：{', '.join(saved)}")
 
-    # 3-6 阶段（骨架：需要接入 AI backend 才能真实执行）
-    # Fable5 标注：当前为离线关键字扫描模式，已完整覆盖对错识别。
-    # AI backend（deepseek/claude）接入后，这些步骤会真实执行：
-    print("[3/6] AI 分析：提取反复出现的模式...（骨架）")
-    print("[4/6] 重放：离线验证中...（骨架，AI backend 未接入时跳过）")
-    print("[5/6] 门控：候选改进通过门控检查")
-    print(f"[6/6] 固化{' (自动应用)' if auto_adopt else ''}：完成")
+    # 3. AI 分析
+    print("[3/6] AI 分析：提取行为模式...")
+    api_config = _load_api_config(vault)
+    analysis = {"patterns": [], "preferences": [], "suggestions": []}
+    gated_passed = []
+    gated_rejected = []
 
-    stats = {"sessions": len(sessions), "tasks": len(sessions) * 3, "passed": 2}
-    learned = [
-        "用户偏好：直接简洁的表达方式",
-        "高频操作：外脑写入 + 搜索外脑",
-    ]
-    rejected = ["（本次无被门控拒绝的项）"]
+    if api_config.get("api_key"):
+        print(f"   🔑 使用 {api_config.get('model', '?')} ({api_config.get('api_url', '')[:50]}...)")
+        analysis = analyze_conversations(sessions, api_config)
+        pd = analysis.get("patterns", [])
+        pr = analysis.get("preferences", [])
+        sg = analysis.get("suggestions", [])
+        print(f"   📊 模式：{len(pd)} | 偏好：{len(pr)} | 改进建议：{len(sg)}")
+
+        # 4. 门控
+        print("[4/6] 门控：验证候选改进...")
+        gated_passed, gated_rejected = gate_improvements(analysis, vault)
+        print(f"   ✅ 通过：{len(gated_passed)} | ❌ 拒绝：{len(gated_rejected)}")
+        for r in gated_rejected:
+            print(f"      └ {r['rule'][:60]}... → {', '.join(r['failures'])}")
+
+        # 5. 固化
+        if gated_passed and auto_adopt:
+            print("[5/6] 固化：写入 CLAUDE.md...")
+            result_path = apply_improvements(gated_passed)
+            if result_path:
+                print(f"   ✅ 已写入：{result_path}")
+            else:
+                print("   ⚠️ 写入失败")
+        else:
+            print(f"[5/6] 固化{' (跳过，需 --auto-adopt)' if not auto_adopt else ''}")
+
+        # 6. 报告
+        print("[6/6] 生成报告...")
+    else:
+        print("   ⚠️ 未检测到 API Key，跳过 AI 分析")
+        print("   💡 三种配置方式：")
+        print("      1. 创建 vault/06_System/nexus-api.json → 填 api_key + api_url + model")
+        print("      2. 设置环境变量 NEXUS_API_KEY + NEXUS_API_URL")
+        print("      3. 设置 DEEPSEEK_API_KEY 或 OPENAI_API_KEY 等厂商变量")
+        print("[4/6] 门控：跳过（无候选）")
+        print("[5/6] 固化：跳过（无候选）")
+        print("[6/6] 生成报告...")
+
+    stats = {
+        "sessions": len(sessions),
+        "mined_mistakes": len(mined.get("mistakes", [])),
+        "mined_praises": len(mined.get("praises", [])),
+        "ai_suggestions": len(analysis.get("suggestions", [])),
+        "gated_passed": len(gated_passed),
+        "gated_rejected": len(gated_rejected),
+    }
+    learned = [s["rule"] for s in gated_passed] if gated_passed else []
+    rejected = [
+        f"{r['rule'][:80]}... ({', '.join(r['failures'])})"
+        for r in gated_rejected
+    ] if gated_rejected else []
 
     rp = generate_report(vault, stats, learned, rejected,
                          mined.get("mistakes", []), mined.get("praises", []),

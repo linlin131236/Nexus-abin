@@ -1,9 +1,14 @@
 # 🧠 Nexus
 
+> **给你的 AI 装上第二大脑。**
+>
+> 一份 SKILL.md，装进 Claude Code 或 Codex。AI 从此不再是"一次性聊天工具"。
+> 它会记笔记、搜知识库、自动写 Obsidian、控制电脑、帮你搞自媒体。越用越懂你。
+>
+> 40+ 功能。Fable5 六层架构审查 100% 通过。3 步安装。
+> 内置 **Nexus Evolve** 自动进化引擎：每天扫你的对话，挖掘对错，写入熔断规则——下次不会再犯同样的错。
+>
 > Author：阿宾 | GitHub：[linlin131236/Nexus-abin](https://github.com/linlin131236/Nexus-abin)
-> 一份 SKILL.md 当操作系统，装进 Claude Code 或 Codex 直接用。
-> 40+ 功能：记笔记、搜知识库、AI 写作、自媒体工具、电脑控制、生活助手。
-> 含 **Nexus Evolve** —— 自动Skill进化引擎，越用越聪明。
 
 ---
 
@@ -17,11 +22,17 @@ git clone https://github.com/linlin131236/Nexus-abin.git ~/.claude/skills/nexus
 
 ### 2️⃣ 创建知识库 + 连 Obsidian
 
+**Windows（cmd）：**
+```cmd
+mkdir %USERPROFILE%\ai-brain-vault\00_Inbox %USERPROFILE%\ai-brain-vault\01_Daily %USERPROFILE%\ai-brain-vault\02_Notes %USERPROFILE%\ai-brain-vault\03_Insights %USERPROFILE%\ai-brain-vault\04_Projects %USERPROFILE%\ai-brain-vault\05_Person %USERPROFILE%\ai-brain-vault\06_System
+```
+
+**Windows（PowerShell）/ Mac / Linux：**
 ```bash
 mkdir -p ~/ai-brain-vault/{00_Inbox,01_Daily,02_Notes,03_Insights,04_Projects,05_Person,06_System}
 ```
 
-然后打开 Obsidian → **"打开其他仓库"** → 选 `~/ai-brain-vault` 这个文件夹。**完成。** AI 写进去的笔记，Obsidian 实时看到。
+然后打开 Obsidian → **"打开其他仓库"** → 选 `ai-brain-vault` 文件夹。**完成。** AI 写进去的笔记，Obsidian 实时看到。
 
 ### 3️⃣ 开始用
 
@@ -152,7 +163,7 @@ cp SKILL.md ~/.codex/skills/ai-brain/
 
 ## 🌙 Nexus Evolve — 自动Skill进化引擎
 
-> 阿宾独立开发的每日学习引擎。Nexus 不只是工具——**越用越聪明**。
+> 阿宾独立开发。每日扫描对话→AI分析→门控验证→自动写回 CLAUDE.md。任意 API 都能用。
 
 | 机制 | 做什么 |
 |------|--------|
@@ -171,10 +182,11 @@ python scripts/nexus-evolve.py status             # 查看最新
 
 ### ⏰ 设为全天候自动运行
 
-**Windows（计划任务）**——每天凌晨 4:53 自动进化：
+**Windows（计划任务）**，每天凌晨 4:53 自动进化：
 
 ```powershell
-schtasks /Create /TN "Nexus Evolve" /TR "python D:\Desktop\ai-brain-skill\scripts\nexus-evolve.py run --auto-adopt" /SC DAILY /ST 04:53 /RL HIGHEST
+# 把 <你的Nexus路径> 换成你 clone 的实际位置，例如 C:\Users\xxx\nexus
+schtasks /Create /TN "Nexus Evolve" /TR "python <你的Nexus路径>\scripts\nexus-evolve.py run --auto-adopt" /SC DAILY /ST 04:53 /RL HIGHEST
 ```
 
 **Mac / Linux（cron）**：
