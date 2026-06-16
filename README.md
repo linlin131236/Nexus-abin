@@ -196,7 +196,7 @@ crontab -e
 | AI 客户端 | Claude Code / Codex CLI 任选 |
 | Obsidian | 可选，用来浏览知识库 |
 | ripgrep | 可选，提升中文搜索（`winget install BurntSushi.ripgrep.MSVC`） |
-| Python 3 | 推荐，Nexus Reflect + 抖音抓取 |
+| Python 3 | 推荐，Nexus Evolve + 抖音抓取 |
 | 知识库路径 | 默认 `~/ai-brain-vault/`，可在 SKILL.md 里改 |
 
 ---
@@ -223,7 +223,26 @@ Nexus/
 
 ---
 
+## ❓ 常见问题
+
+**Q：装完没反应？**
+A：确认 `SKILL.md` 在 `~/.claude/skills/nexus/` 目录下。重启 Claude Code 窗口。
+
+**Q：搜索中文不准？**
+A：装 ripgrep：`winget install BurntSushi.ripgrep.MSVC`（Win）或 `brew install ripgrep`（Mac）。
+
+**Q：Obsidian 看不到笔记？**
+A：确认 Obsidian 打开的仓库路径和 SKILL.md 里的 vault 路径是**同一个文件夹**。
+
+**Q：Nexus Evolve 没自动跑？**
+A：确认计划任务已创建：`schtasks /Query /TN "Nexus Evolve"`。关机错过了等下次开机自动补跑。
+
+**Q：抖音抓取失败？**
+A：装 Playwright：`pip install playwright aiohttp && python -m playwright install chromium`。国内用镜像更快。
+
+---
+
 ## 版权
 
-© 2026 阿宾 | GitHub：[linlin131236/Nexus-abin](https://github.com/linlin131236/Nexus-abin) | 含 Nexus Reflect 每日进化
+© 2026 阿宾 | GitHub：[linlin131236/Nexus-abin](https://github.com/linlin131236/Nexus-abin) | 含 Nexus Evolve 自动Skill进化
 保留所有权利。

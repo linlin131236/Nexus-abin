@@ -1,13 +1,18 @@
 """
 抖音视频无水印下载脚本（Playwright 驱动）
 
-Author: 阿宾 | GitHub: linlin131236/ai-brain-skill
+Author: 阿宾 | GitHub: linlin131236/Nexus-abin
 依赖：pip install playwright aiohttp && python -m playwright install chromium
-参考：KAMIENDER/douyin-video-fetch
 
 用法：
   python fetch_douyin.py "https://www.douyin.com/video/7599980362898427178"
   python fetch_douyin.py 7599980362898427178
+
+⚠️ 安全边界：
+- 只下载用户明确指定的视频，不自动爬取
+- 输出目录限制在传参范围内，不写系统目录
+- 下载失败不重试，不卡死主流程
+- 不用于批量无授权采集
 """
 
 import asyncio
@@ -229,15 +234,23 @@ def main():
         print("No input items")
         return
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    try:
+        os.makedirs(args.output_dir, exist_ok=True)
+    except Exception as e:
+        print(f"[FAIL] 无法创建输出目录 {args.output_dir}: {e}")
+        return
     results = []
     for raw in items:
-        url = normalize_input_to_url(raw)
-        vid_match = re.search(r"/video/(\d{8,25})", url)
-        vid = vid_match.group(1) if vid_match else str(int(time.time() * 1000))
-        output_path = os.path.join(args.output_dir, f"{vid}.mp4")
-        ok = asyncio.run(download_video(url, output_path))
-        results.append({"input": raw, "url": url, "video_id": vid, "ok": ok, "output": output_path if ok else ""})
+        try:
+            url = normalize_input_to_url(raw)
+            vid_match = re.search(r"/video/(\d{8,25})", url)
+            vid = vid_match.group(1) if vid_match else str(int(time.time() * 1000))
+            output_path = os.path.join(args.output_dir, f"{vid}.mp4")
+            ok = asyncio.run(download_video(url, output_path))
+            results.append({"input": raw, "url": url, "video_id": vid, "ok": ok, "output": output_path if ok else ""})
+        except Exception as e:
+            logger.error(f"Batch item failed: {raw} — {e}")
+            results.append({"input": raw, "url": raw, "video_id": "", "ok": False, "output": ""})
 
     ok = sum(1 for r in results if r["ok"])
     fail = len(results) - ok
