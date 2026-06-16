@@ -1,0 +1,16 @@
+# Obsidian
+.obsidian/
+.trash/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# API keys
+.env
+.env.local
+.dev.vars
+
+# Python
+__pycache__/
+*.pyc
