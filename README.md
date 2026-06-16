@@ -150,7 +150,7 @@ cp SKILL.md ~/.codex/skills/ai-brain/
 
 ---
 
-## 🌙 Nexus Reflect — 每日自我进化
+## 🌙 Nexus Evolve — 自动Skill进化引擎
 
 > 阿宾独立开发的每日学习引擎。Nexus 不只是工具——**越用越聪明**。
 
@@ -162,9 +162,9 @@ cp SKILL.md ~/.codex/skills/ai-brain/
 | **固化** | 通过门控的改进自动写回 CLAUDE.md |
 
 ```bash
-python scripts/nexus-reflect.py run --auto-adopt  # 全自动
-python scripts/nexus-reflect.py dry-run            # 仅看报告
-python scripts/nexus-reflect.py status             # 查看最新
+python scripts/nexus-evolve.py run --auto-adopt  # 全自动
+python scripts/nexus-evolve.py dry-run            # 仅看报告
+python scripts/nexus-evolve.py status             # 查看最新
 ```
 
 每天生成 `05_Person/Reflect-YYYY-MM-DD.md` 报告。
@@ -199,7 +199,7 @@ Nexus/
 │   ├── 05_Person/
 │   └── 06_System/
 └── scripts/
-    ├── nexus-reflect.py    # 🌙 每日自我进化引擎
+    ├── nexus-evolve.py     # 🌙 自动Skill进化引擎
     └── fetch_douyin.py     # 🎥 抖音视频抓取
 ```
 

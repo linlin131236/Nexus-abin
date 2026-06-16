@@ -1,14 +1,14 @@
 """
-Nexus Reflect — 每日自我进化引擎
+Nexus Evolve — 自动Skill进化引擎
 
 每晚自动扫描 Claude Code / Codex 历史会话，提取模式，优化 CLAUDE.md。
 阿宾独立开发，Nexus 生态的核心学习模块。
 
 用法：
-  python nexus-reflect.py run --auto-adopt     # 全自动
-  python nexus-reflect.py dry-run               # 只看报告不改文件
-  python nexus-reflect.py status                # 查看待应用改进
-  python nexus-reflect.py adopt                 # 应用通过门控的改进
+  python nexus-evolve.py run --auto-adopt     # 全自动
+  python nexus-evolve.py dry-run               # 只看报告不改文件
+  python nexus-evolve.py status                # 查看待应用改进
+  python nexus-evolve.py adopt                 # 应用通过门控的改进
 """
 
 import argparse
@@ -18,7 +18,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-NAME = "Nexus Reflect"
+NAME = "Nexus Evolve"
 VERSION = "1.0.0"
 AUTHOR = "阿宾"
 REPO = "github.com/linlin131236/Nexus-abin"
@@ -95,21 +95,21 @@ def harvest_sessions(transcript_dir: Path, lookback_hours: int = 24) -> list[dic
 
 
 def generate_report(vault_path: str, stats: dict, learned: list, rejected: list) -> str:
-    """生成每日 Reflect 报告。"""
+    """生成每日 Evolve 报告。"""
     today = datetime.now().strftime("%Y-%m-%d")
     report_dir = Path(vault_path) / "05_Person"
-    report_path = report_dir / f"Reflect-{today}.md"
+    report_path = report_dir / f"Evolve-{today}.md"
 
     lines = [
         f"---",
-        f"title: Nexus Reflect 日报 — {today}",
+        f"title: Nexus Evolve 日报 — {today}",
         f"date: {today}",
-        f"tags: [Reflect, 进化, 日报]",
+        f"tags: [Evolve, 进化, 日报]",
         f"category: System",
-        f"source: Nexus Reflect",
+        f"source: Nexus Evolve",
         f"---",
         f"",
-        f"# 🌙 Nexus Reflect 日报 — {today}",
+        f"# 🌙 Nexus Evolve 日报 — {today}",
         f"",
         f"> 自动生成 | {NAME} v{VERSION} | {AUTHOR}",
         f"",
@@ -195,9 +195,9 @@ def cmd_status(args):
     """查看最新报告的摘要。"""
     vault = find_vault_path()
     report_dir = Path(vault) / "05_Person"
-    reports = sorted(report_dir.glob("Reflect-*.md"), reverse=True)
+    reports = sorted(report_dir.glob("Evolve-*.md"), reverse=True)
     if not reports:
-        print("暂无 Reflect 报告。运行 `nexus-reflect.py run` 生成第一份。")
+        print("暂无 Evolve 报告。运行 `nexus-evolve.py run` 生成第一份。")
         return
     latest = reports[0]
     print(f"📋 最新报告：{latest.name}")
@@ -229,7 +229,7 @@ def cmd_adopt(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description=f"Nexus Reflect v{VERSION} — 每日自我进化 | {AUTHOR}",
+        description=f"Nexus Evolve v{VERSION} — 每日自我进化 | {AUTHOR}",
     )
     sub = parser.add_subparsers(dest="command")
 
