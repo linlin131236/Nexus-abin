@@ -1,8 +1,9 @@
 # 🧠 Nexus
 
-> Author：阿宾 | GitHub：[linlin131236/ai-brain-skill](https://github.com/linlin131236/ai-brain-skill)
+> Author：阿宾 | GitHub：[linlin131236/Nexus-abin](https://github.com/linlin131236/Nexus-abin)
 > 一份 SKILL.md 当操作系统，装进 Claude Code 或 Codex 直接用。
 > 40+ 功能：记笔记、搜知识库、AI 写作、自媒体工具、电脑控制、生活助手。
+> 含 **Nexus Reflect** —— 每日自我进化引擎，越用越聪明。
 
 ---
 
@@ -11,7 +12,7 @@
 ### 1️⃣ 克隆 Skill
 
 ```bash
-git clone https://github.com/linlin131236/ai-brain-skill.git ~/.claude/skills/ai-brain
+git clone https://github.com/linlin131236/Nexus-abin.git ~/.claude/skills/nexus
 ```
 
 ### 2️⃣ 创建知识库 + 连 Obsidian
@@ -149,6 +150,27 @@ cp SKILL.md ~/.codex/skills/ai-brain/
 
 ---
 
+## 🌙 Nexus Reflect — 每日自我进化
+
+> 阿宾独立开发的每日学习引擎。Nexus 不只是工具——**越用越聪明**。
+
+| 机制 | 做什么 |
+|------|--------|
+| **收割** | 每晚自动扫描 Claude Code / Codex 历史会话 |
+| **挖掘** | AI 提取反复出现的任务、偏好、习惯 |
+| **门控** | 只有 ≥3 个会话验证 + 比现有规则更优才通过 |
+| **固化** | 通过门控的改进自动写回 CLAUDE.md |
+
+```bash
+python scripts/nexus-reflect.py run --auto-adopt  # 全自动
+python scripts/nexus-reflect.py dry-run            # 仅看报告
+python scripts/nexus-reflect.py status             # 查看最新
+```
+
+每天生成 `05_Person/Reflect-YYYY-MM-DD.md` 报告。
+
+---
+
 ## 需要什么
 
 | 项目 | 说明 |
@@ -156,6 +178,7 @@ cp SKILL.md ~/.codex/skills/ai-brain/
 | AI 客户端 | Claude Code / Codex CLI 任选 |
 | Obsidian | 可选，用来浏览知识库 |
 | ripgrep | 可选，提升中文搜索（`winget install BurntSushi.ripgrep.MSVC`） |
+| Python 3 | 推荐，Nexus Reflect + 抖音抓取 |
 | 知识库路径 | 默认 `~/ai-brain-vault/`，可在 SKILL.md 里改 |
 
 ---
@@ -163,23 +186,26 @@ cp SKILL.md ~/.codex/skills/ai-brain/
 ## 目录结构
 
 ```
-ai-brain-skill/
-├── SKILL.md           # 核心操作系统（AI 读这个）
-├── README.md          # 这个文件
-├── vault-template/    # Obsidian 知识库模板
-│   ├── 00_Inbox/      # 收件箱
-│   ├── 01_Daily/      # 日常记录
-│   ├── 02_Notes/      # 整理笔记
-│   ├── 03_Insights/   # 洞察
-│   ├── 04_Projects/   # 项目
-│   ├── 05_Person/     # 个人
-│   └── 06_System/     # 系统配置
-└── scripts/           # 辅助脚本
+Nexus/
+├── SKILL.md                # 核心操作系统（AI 读这个）
+├── README.md               # 安装指南
+├── CLAUDE.md               # Claude Code 自动加载
+├── vault-template/         # Obsidian 知识库模板
+│   ├── 00_Inbox/
+│   ├── 01_Daily/
+│   ├── 02_Notes/
+│   ├── 03_Insights/
+│   ├── 04_Projects/
+│   ├── 05_Person/
+│   └── 06_System/
+└── scripts/
+    ├── nexus-reflect.py    # 🌙 每日自我进化引擎
+    └── fetch_douyin.py     # 🎥 抖音视频抓取
 ```
 
 ---
 
 ## 版权
 
-© 2026 阿宾 | GitHub：[linlin131236/ai-brain-skill](https://github.com/linlin131236/ai-brain-skill)
+© 2026 阿宾 | GitHub：[linlin131236/Nexus-abin](https://github.com/linlin131236/Nexus-abin) | 含 Nexus Reflect 每日进化
 保留所有权利。
